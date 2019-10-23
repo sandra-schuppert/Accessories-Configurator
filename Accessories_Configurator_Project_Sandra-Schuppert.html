@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+  <head>
+    <title>Accessories Configurator Project</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Sandra Schuppert" />
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Accessories Configurator Project
+## Creation of a ShinyApp
+### Sandra Schuppert
+### 2019/10/23
+
+---
+
+
+
+
+# Agenda
+
+1. Project Description
+2. Data Preparation
+3. Addition of Product Categories
+4. ShinyApp Creation - UI
+5. ShinyApp Creation - Building outputs
+
+---
+
+# 1. Project Description
+
+The data used in the project was derived from the Mercedes-Benz Accessories Configurator which is run by Mercedes-Benz Customer Solutions, a 100% daughter company of Mercedes-Benz. 
+
+![](Pic1.JPG)
+
+---
+
+The product portfolio includes i.a. floor mats, light-alloy wheels, navigation, carrier bars and visual refinements.
+
+![](Pic2.JPG)
+
+---
+
+In the following process we will use a ShinyApp to create a dashboard showing the user clicks for accessory products by product group, country and vehicle class.
+The used data includes the following variables:
+
+* **Hour**: Month/Day/Year/Hour in which customer was active in AC
+
+* **GeoSegmentation Countries**: Origin of customer
+
+* **Unique ID**: ID containing vehicle model and motorisation
+
+* **Product ID (v7)(evar)**: Part number of Accessories product
+
+* **Unique visitors**: Number of clicks
+
+* **Product Printouts: Total (event1)**: Number of printouts
+
+---
+
+# 2. Data Preparation
+
+The relevant packages are loaded and the 5 csv files (ordered by Date) are loaded and combined.
+
+
+```r
+library(readr)
+library(ggplot2)
+library(dplyr)
+library(treemapify)
+```
+
+
+```r
+df1 &lt;- read.csv("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\DataScience_18_07-09.csv", 
+                na.strings=c("", "not_set"))
+df2 &lt;- read.csv("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\DataScience_18_10-12.csv", 
+                na.strings=c("", "not_set"))
+df3 &lt;- read.csv("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\DataScience_19_01-03.csv", 
+                na.strings=c("", "not_set"))
+df4 &lt;- read.csv("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\DataScience_19_04.csv", 
+                na.strings=c("", "not_set"))
+df5 &lt;- read.csv("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\DataScience_19_04.csv", 
+                na.strings=c("", "not_set"))
+
+df &lt;- rbind(df1, df2, df3, df4, df5)
+```
+
+---
+
+The column Product Printouts is not needed and therefore will be deleted.
+
+
+```r
+df$Product.Printouts..Total..event1. &lt;- NULL
+```
+
+
+The columns GeoSegmentation.Countries and Product_ID = Product.ID..v7...evar7. are renamed to Country and Product_ID.
+
+
+```r
+df &lt;- df %&gt;% 
+    rename(Product_ID = Product.ID..v7...evar7., Country = GeoSegmentation.Countries)
+```
+
+All lines with missing values are removed.
+
+
+```r
+df &lt;- na.omit(df)
+```
+
+
+---
+# 3. Addition of Product Categories
+
+Since the part number for the Accessories products are not meaningful we will add a column "product category" by merging the dataframe with the excel file "SNR-Kategorien" which will be assigned as "cats".
+
+Load excel file "SNR-Kategorien"
+
+```r
+library(readxl)
+cats &lt;- read_excel("E:\\Dropbox\\Sandra\\Uni\\Weiterbildung Business Analytics\\10_Programming Languages for Data Science\\Accessories Configurator\\SNR-Kategorien.xlsx")
+```
+
+
+Left join of df and cats on Product_ID (column Product_ID in df is changed to character before the join)
+
+```r
+df$Product_ID &lt;- as.character(df$Product_ID)
+ac &lt;- left_join(df, cats, by="Product_ID")
+```
+
+
+Now that the dataframe ist complete we will start to create the dashboard as shinyapp.
+
+---
+
+# 4. ShinyApp Creation - UI
+
+First we load shiny, shinywidgets and googleVis for plotting maps.
+
+
+```r
+library(googleVis)
+library(shiny)
+library(shinyWidgets)
+```
+
+* The page will be split into a sidepanel in which the user can select specific variables and in the mainpanel holding the plots and tables. 
+
+* Since we only have text-values to select, we will only use selectInputs which will create a drop down menu in which the user can choose the Country, the Vehicle Class and the Product category.
+
+* The plots created in the next step are supposed to change according to the characteristic chosen by the user.
+
+
+---
+
+The dashboard shall include the following plots:
+
++ Number of clicks per division in a treemap plot filtered by country
+
++ Top 5 products in a table filtered by country and vehicle class]
+
++ Number of clicks per product category in a bar plot filtered by country and vehicle class
+
++ Number of clicks per product category in a country map]
+
+
+We create two tabs: one for plots 1-3 called "Tables &amp; Graphs" and one for the map called "Map".
+
+---
+
+In the first step we create the input options and define the available choices. Further we define the output to be
+a table Output, a plot Output or html Output.
+
+
+```r
+ui &lt;- fluidPage(titlePanel("Car Accessories Configurator - Clicking Data"),
+                sidebarLayout(
+                  sidebarPanel(
+                    selectInput("CountryInput", "Country:",
+                                choices=unique(ac$Country %&gt;%sort),
+                                selected = "germany"),
+                    selectInput("VehicleInput", "Vehicle Class:",
+                                choices=unique(ac$Vehicle.Class %&gt;%sort)),
+                    selectInput("CategoryInput", "Product Category:",
+                                choices=unique(ac$Category %&gt;%sort))
+                    ),
+                  mainPanel(
+                    tabsetPanel(type="tabs",
+                                tabPanel("Tables &amp; Graphs", fluidRow(column(7, plotOutput("bar1")),
+                                                  column(5, tableOutput("table1"))), 
+                                         fluidRow(column(12,plotOutput("bar2"))
+                                         )),
+                                tabPanel("Map", htmlOutput("gVis")))
+                    
+                    )
+                )
+)
+```
+
+---
+
+#5. ShinyApp Creation - Building outputs
+
+In the second step we specify the output and link it to the input options.
+
+**Output "bar1":**
+- The first output should be the treemap which we named "bar1" in the output section of the UI
+
+- Therefore we will assign bar1 to the output
+
+- Select the variables Country, Division and Unique.Visitors from the dataframe ac
+
+- Filter for country in which we will link to the selectInput created in the UI
+
+- To show the aggregated clicks per country we will summarize by the column Unique.Visitors column and assign the name "Visitor_sum"
+
+- Choose area=Visitor_sum in the treemap specification
+
+- By chosing fill=Division we make sure that the divisions will be separated by color.
+
+
+---
+**Output "table1":**
+- The second output "table1" will include a table showing the Top 5 products by name
+
+- The filter options are country and vehicle class
+
+- We filter for the respective variables in the dataframe ac, group the data by name and summarize by
+the sum of Unique.Visitors
+
+- To only show the Top 5 products we order descendingly and select top_n(5).
+
+**Output "bar2"**
+- The third output "bar2" shall plot the number of clicks by product group in a bar plot
+
+- In this case the filter options are Country and Vehicle Class.
+
+- The variables Country, Vehicle.Class, Category and Unique.Visitors are selected and grouped by Country and Category
+
+- The sum of Unique.Visitors is calculated and assigned to the name "Clicks" which is also going to be shown in the bar plot
+
+- The color is adjusted to dodgerblue1
+
+---
+**Output "map1":**
+- The last output is created with the googleVis package and shows a world map in which the number of clicks is shown with filter option "Product category"
+
+- The countries which have high click rates for the chosen product group will be shown in green, the countries with lower clicking rates on the chosen product group will be shown in grey
+
+- Select Country, Category and Unique.Visitors from the dataframe
+
+- Filter by Category and summarize the number of clicks by calculating the sum of column Unique.visitors as "Clicks2"
+
+- In the gvisGeoChart specification choose the column Country als location variable (locationvar) and the column "Clicks2" als color variable (colorvar)
+
+---
+
+
+```r
+server &lt;- function(input, output) {output$bar1 &lt;- renderPlot({
+  ac_country &lt;- 
+    ac %&gt;%
+    select(Country, Division, Unique.Visitors)%&gt;%
+    filter(Country == input$CountryInput)
+  ac_country2 &lt;-
+    ac_country%&gt;%
+    group_by(Country, Division)%&gt;%
+    summarize(Visitor_sum = sum(Unique.Visitors))
+  ggplot(ac_country2, aes(area = Visitor_sum, fill = Division)) +
+    geom_treemap()
+}, height=200, width=300)
+output$table1 &lt;- renderTable({
+  ac_Top5 &lt;-
+    ac%&gt;%
+    filter(Country == input$CountryInput, Vehicle.Class == input$VehicleInput)%&gt;%
+    group_by(Name)%&gt;%
+    summarize(Clicks=sum(Unique.Visitors))
+  ac_Top5_sorted &lt;-
+    ac_Top5[order(-ac_Top5$Clicks),]%&gt;%
+    top_n(5)
+  ac_Top5_sorted
+}, height=100, width=200)
+output$bar2 &lt;- renderPlot({
+  ac_Cat &lt;-
+    ac %&gt;%
+    select(Country, Vehicle.Class, Category, Unique.Visitors)%&gt;%
+    filter(Country == input$CountryInput, Vehicle.Class == input$VehicleInput)
+  ac_Cat2 &lt;-
+    ac_Cat%&gt;%
+    group_by(Country, Category)%&gt;%
+    summarize(Visitor_sum2=sum(Unique.Visitors))%&gt;%
+    arrange(desc(Visitor_sum2)
+            )
+  ggplot(ac_Cat2, aes(x=Category, y=Visitor_sum2))+
+    geom_col(fill="dodgerblue1")+
+    coord_flip()+
+    ylab("Clicks")
+}, height=400, width=600)
+output$gVis &lt;- renderGvis({
+  ac_Cat3 &lt;-
+    ac%&gt;%
+    select(Country, Category, Unique.Visitors)%&gt;%
+    filter(Category == input$CategoryInput)
+  ac_Cat4 &lt;-
+    ac_Cat3%&gt;%
+    group_by(Category, Country)%&gt;%
+    summarize(Clicks2=sum(Unique.Visitors))
+  gvisGeoChart(ac_Cat4, locationvar="Country", 
+               colorvar="Clicks2",
+               options=list(height=600, width=1000,colorAxis="{colors:['lightgrey', 'green']}"))
+})
+}
+
+shinyApp(ui=ui, server=server)
+```
+
+<div style="width: 100% ; height: 400px ; text-align: center; box-sizing: border-box; -moz-box-sizing: border-box; -webkit-box-sizing: border-box;" class="muted well">Shiny applications not supported in static R Markdown documents</div>
+
+---
+#6. Result
+
+![](Pic3.JPG)
+
+---
+#6. Result
+
+![](Pic4.JPG)
+
+---
+
+#7. GitHub
+
+The app.R file as well as the xaringan-presentation are uploaded in GitHup under the following link:
+https://github.com/sandra-schuppert/Accessories-Configurator
+
+
+class: center, middle
+
+# Thanks!
+
+Slides created via the R package [**xaringan**](https://github.com/yihui/xaringan).
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>

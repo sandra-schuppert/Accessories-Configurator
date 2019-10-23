@@ -41,9 +41,8 @@ glimpse(df)
 
 #Step_2: Data adjustments (Delete, Rename, NA-values)
 
-#Columns "Product Printouts: Total (event1)", "Unique visitors" "Unique ID" are not used for the dashboard and therefore will be delete
+#The column  "Product Printouts: Total (event1)" is not used for the dashboard and therefore will be deleted.
 df$Product.Printouts..Total..event1. <- NULL
-#df$Unique.ID <- NULL
 
 #Rename columns
 df <- df %>% 
